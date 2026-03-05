@@ -115,58 +115,78 @@ class Database:
     # -- schema ------------------------------------------------------------
 
     def _init_schema(self):
+        """
+        Create tables if they don't exist.  Uses an advisory lock so that
+        when gunicorn spawns multiple workers, only one actually runs the
+        DDL — the others wait and then skip.  This avoids the race where
+        two workers both try to CREATE TABLE with SERIAL columns and the
+        second hits a UniqueViolation on the implicit sequence.
+        """
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute('''
-                    CREATE TABLE IF NOT EXISTS projects (
-                        id SERIAL PRIMARY KEY,
-                        request_id TEXT UNIQUE NOT NULL,
-                        project_name TEXT,
-                        capacity_mw DOUBLE PRECISION,
-                        county TEXT,
-                        state TEXT,
-                        customer TEXT,
-                        utility TEXT,
-                        status TEXT,
-                        fuel_type TEXT,
-                        source TEXT,
-                        source_url TEXT,
-                        project_type TEXT,
-                        data_hash TEXT,
-                        first_seen TIMESTAMP DEFAULT NOW(),
-                        last_updated TIMESTAMP DEFAULT NOW()
-                    );
+                # Grab a session-level advisory lock (arbitrary key 1)
+                cur.execute('SELECT pg_advisory_lock(1)')
+                try:
+                    # Check if tables already exist to skip DDL entirely
+                    cur.execute("""
+                        SELECT COUNT(*) FROM information_schema.tables
+                        WHERE table_schema = 'public' AND table_name = 'projects'
+                    """)
+                    if cur.fetchone()[0] == 0:
+                        cur.execute('''
+                            CREATE TABLE projects (
+                                id SERIAL PRIMARY KEY,
+                                request_id TEXT UNIQUE NOT NULL,
+                                project_name TEXT,
+                                capacity_mw DOUBLE PRECISION,
+                                county TEXT,
+                                state TEXT,
+                                customer TEXT,
+                                utility TEXT,
+                                status TEXT,
+                                fuel_type TEXT,
+                                source TEXT,
+                                source_url TEXT,
+                                project_type TEXT,
+                                data_hash TEXT,
+                                first_seen TIMESTAMP DEFAULT NOW(),
+                                last_updated TIMESTAMP DEFAULT NOW()
+                            );
 
-                    CREATE TABLE IF NOT EXISTS monitor_runs (
-                        id SERIAL PRIMARY KEY,
-                        run_date TIMESTAMP DEFAULT NOW(),
-                        status TEXT,
-                        sources_checked INTEGER,
-                        projects_found INTEGER,
-                        projects_stored INTEGER,
-                        duration_seconds DOUBLE PRECISION,
-                        details TEXT
-                    );
+                            CREATE TABLE monitor_runs (
+                                id SERIAL PRIMARY KEY,
+                                run_date TIMESTAMP DEFAULT NOW(),
+                                status TEXT,
+                                sources_checked INTEGER,
+                                projects_found INTEGER,
+                                projects_stored INTEGER,
+                                duration_seconds DOUBLE PRECISION,
+                                details TEXT
+                            );
 
-                    CREATE TABLE IF NOT EXISTS sync_log (
-                        id SERIAL PRIMARY KEY,
-                        source TEXT,
-                        sync_time TIMESTAMP DEFAULT NOW(),
-                        projects_found INTEGER,
-                        projects_new INTEGER,
-                        status TEXT,
-                        error_message TEXT
-                    );
-                ''')
-                for idx_sql in [
-                    'CREATE INDEX IF NOT EXISTS idx_projects_utility ON projects(utility)',
-                    'CREATE INDEX IF NOT EXISTS idx_projects_state ON projects(state)',
-                    'CREATE INDEX IF NOT EXISTS idx_projects_type ON projects(project_type)',
-                    'CREATE INDEX IF NOT EXISTS idx_projects_capacity ON projects(capacity_mw)',
-                ]:
-                    cur.execute(idx_sql)
+                            CREATE TABLE sync_log (
+                                id SERIAL PRIMARY KEY,
+                                source TEXT,
+                                sync_time TIMESTAMP DEFAULT NOW(),
+                                projects_found INTEGER,
+                                projects_new INTEGER,
+                                status TEXT,
+                                error_message TEXT
+                            );
+                        ''')
+                        for idx_sql in [
+                            'CREATE INDEX IF NOT EXISTS idx_projects_utility ON projects(utility)',
+                            'CREATE INDEX IF NOT EXISTS idx_projects_state ON projects(state)',
+                            'CREATE INDEX IF NOT EXISTS idx_projects_type ON projects(project_type)',
+                            'CREATE INDEX IF NOT EXISTS idx_projects_capacity ON projects(capacity_mw)',
+                        ]:
+                            cur.execute(idx_sql)
+                        logger.info("PostgreSQL tables created")
+                    else:
+                        logger.info("PostgreSQL tables already exist")
+                finally:
+                    cur.execute('SELECT pg_advisory_unlock(1)')
             conn.commit()
-        logger.info("PostgreSQL schema initialized")
 
     # -- query helpers -----------------------------------------------------
 
@@ -814,6 +834,17 @@ def start_scheduler():
         return
     _scheduler_started = True
 
+    # Only one gunicorn worker should run the scheduler.
+    # Use a non-blocking try lock (key 3).  If we don't get it,
+    # another worker already owns the scheduler — skip.
+    try:
+        got_lock = db.fetchone('SELECT pg_try_advisory_lock(3) AS locked')['locked']
+        if not got_lock:
+            logger.info("Scheduler owned by another worker, skipping")
+            return
+    except Exception:
+        return  # If the lock check fails, don't start a scheduler
+
     def loop():
         while True:
             time.sleep(SYNC_INTERVAL)
@@ -956,13 +987,29 @@ def init_app():
     os.makedirs(DATA_DIR, exist_ok=True)
     logger.info(f"Power Monitor v{APP_VERSION} | PostgreSQL | gridstatus: {GRIDSTATUS_AVAILABLE}")
 
-    count = db.fetchone('SELECT COUNT(*) AS c FROM projects')['c']
-    if count == 0:
-        logger.info("Empty database — running initial sync")
-        try:
-            fetcher.run_full_sync()
-        except Exception as e:
-            logger.error(f"Initial sync failed: {e}")
+    # Use an advisory lock so only one gunicorn worker runs the initial sync.
+    # pg_try_advisory_lock returns true if we got the lock, false if another
+    # worker already holds it.  Lock key 2 (key 1 is used by schema init).
+    try:
+        got_lock = db.fetchone('SELECT pg_try_advisory_lock(2) AS locked')['locked']
+        if got_lock:
+            try:
+                count = db.fetchone('SELECT COUNT(*) AS c FROM projects')['c']
+                if count == 0:
+                    logger.info("Empty database — running initial sync")
+                    fetcher.run_full_sync()
+                else:
+                    logger.info(f"Database has {count} projects, skipping initial sync")
+            except Exception as e:
+                logger.error(f"Initial sync failed: {e}")
+            finally:
+                db.execute('SELECT pg_advisory_unlock(2)')
+        else:
+            logger.info("Another worker is handling initial sync, skipping")
+    except Exception as e:
+        logger.error(f"init_app error: {e}")
+
+    start_scheduler()
 
     start_scheduler()
 
