@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Power Monitor{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --sidebar-bg: #101827;
+            --sidebar-w: 240px;
+            --accent: #3b82f6;
+            --accent-light: #60a5fa;
+            --surface: #ffffff;
+            --muted: #64748b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+        }
+
+        /* --- sidebar --- */
+        .sidebar {
+            position: fixed; top: 0; left: 0;
+            width: var(--sidebar-w); height: 100vh;
+            background: var(--sidebar-bg);
+            display: flex; flex-direction: column;
+            padding: 24px 0; z-index: 1000;
+            overflow-y: auto;
+        }
+        .sidebar-brand {
+            color: #fff; font-size: 1.15rem; font-weight: 700;
+            padding: 0 20px 20px;
+            border-bottom: 1px solid rgba(255,255,255,.08);
+            margin-bottom: 16px;
+            letter-spacing: -.02em;
+        }
+        .sidebar-brand i { color: #facc15; margin-right: 6px; }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,.55);
+            padding: 10px 20px; margin: 2px 10px;
+            border-radius: 6px; font-size: .875rem;
+            transition: .15s;
+        }
+        .sidebar .nav-link:hover { color: #fff; background: rgba(255,255,255,.06); }
+        .sidebar .nav-link.active { color: #fff; background: rgba(59,130,246,.25); }
+        .sidebar .nav-link i { margin-right: 10px; width: 18px; text-align: center; }
+
+        /* --- main --- */
+        .main-content { margin-left: var(--sidebar-w); padding: 28px 32px; min-height: 100vh; }
+
+        /* --- cards --- */
+        .stat-card {
+            background: var(--surface); border-radius: 10px; padding: 22px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.06);
+        }
+        .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1; }
+        .stat-label { color: var(--muted); font-size: .82rem; margin-top: 6px; }
+
+        .card { border: none; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+        .card-header {
+            background: var(--surface); border-bottom: 1px solid #e2e8f0;
+            font-weight: 600; padding: 14px 18px; font-size: .9rem;
+        }
+
+        /* --- utility badges --- */
+        .u-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 20px;
+            font-size: .75rem; font-weight: 600; letter-spacing: .02em;
+        }
+        .u-CAISO   { background: #dbeafe; color: #1e40af; }
+        .u-ERCOT   { background: #ffedd5; color: #9a3412; }
+        .u-MISO    { background: #dcfce7; color: #166534; }
+        .u-PJM     { background: #fce7f3; color: #9d174d; }
+        .u-SPP     { background: #f3e8ff; color: #6b21a8; }
+        .u-NYISO   { background: #ccfbf1; color: #115e59; }
+        .u-ISO-NE  { background: #fef9c3; color: #854d0e; }
+        .u-Other   { background: #f1f5f9; color: #475569; }
+
+        .table th { font-weight: 600; color: #475569; font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+
+        /* --- mobile --- */
+        @media (max-width: 991px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; padding: 16px; }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar d-none d-lg-flex">
+        <div class="sidebar-brand">
+            <i class="bi bi-lightning-charge-fill"></i> Power Monitor
+        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'projects_page' %}active{% endif %}" href="{{ url_for('projects_page') }}">
+                    <i class="bi bi-table"></i> Projects
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'monitoring' %}active{% endif %}" href="{{ url_for('monitoring') }}">
+                    <i class="bi bi-activity"></i> Monitoring
+                </a>
+            </li>
+            <li class="nav-item mt-auto pt-4">
+                <a class="nav-link text-warning" href="{{ url_for('trigger_sync') }}">
+                    <i class="bi bi-arrow-clockwise"></i> Run Sync Now
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- Mobile Nav -->
+    <nav class="navbar navbar-dark d-lg-none" style="background:var(--sidebar-bg)">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><i class="bi bi-lightning-charge-fill text-warning"></i> Power Monitor</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mobNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mobNav">
+                <ul class="navbar-nav">
+                    <li><a class="nav-link" href="{{ url_for('index') }}">Dashboard</a></li>
+                    <li><a class="nav-link" href="{{ url_for('projects_page') }}">Projects</a></li>
+                    <li><a class="nav-link" href="{{ url_for('monitoring') }}">Monitoring</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

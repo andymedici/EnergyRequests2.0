@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ project.project_name[:50] }} - Power Monitor{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('projects_page') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Projects
+    </a>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ project.project_name }}</h5>
+                <span class="u-badge u-{{ project.utility }}" style="font-size:.85rem">{{ project.utility }}</span>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0" style="font-size:.9rem">
+                    <tr>
+                        <th style="width:140px;color:#64748b">Request ID</th>
+                        <td><code>{{ project.request_id }}</code></td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Capacity</th>
+                        <td><span style="font-size:1.4rem;font-weight:700;color:#3b82f6">{{ "%.0f"|format(project.capacity_mw) }} MW</span></td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Customer</th>
+                        <td>{{ project.customer or 'Not specified' }}</td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Location</th>
+                        <td>{% if project.county %}{{ project.county }}, {% endif %}{{ project.state or 'Unknown' }}</td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Project Type</th>
+                        <td><span class="badge bg-info">{{ project.project_type or 'other' }}</span></td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Fuel Type</th>
+                        <td>{{ project.fuel_type or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th style="color:#64748b">Status</th>
+                        <td>{{ project.status or 'Active' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-info-circle"></i> Source Info</div>
+            <div class="card-body" style="font-size:.88rem">
+                <p><strong>Source:</strong><br>{{ project.source }}</p>
+                <p><strong>First Seen:</strong><br>{{ project.first_seen }}</p>
+                <p class="mb-0"><strong>Last Updated:</strong><br>{{ project.last_updated }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header"><i class="bi bi-collection"></i> More in {{ project.state or 'this area' }}</div>
+    <div class="card-body">
+        <a href="{{ url_for('projects_page') }}#state={{ project.state }}" class="btn btn-sm btn-outline-primary">
+            View all projects in {{ project.state or 'this state' }}
+        </a>
+    </div>
+</div>
+{% endblock %}

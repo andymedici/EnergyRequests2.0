@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Monitoring - Power Monitor{% endblock %}
+
+{% block content %}
+<h2 class="mb-4" style="font-weight:700"><i class="bi bi-activity"></i> System Monitoring</h2>
+
+<div class="row mb-4 g-3">
+    <div class="col-md-3">
+        <div class="card text-center py-3">
+            <h6 class="text-muted mb-1">Status</h6>
+            <h3><i class="bi bi-check-circle-fill text-success"></i></h3>
+            <small>Operational</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center py-3">
+            <h6 class="text-muted mb-1">Data Sources</h6>
+            <h3>{{ source_stats|length }}</h3>
+            <small>Active ISOs</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center py-3">
+            <h6 class="text-muted mb-1">Sync Interval</h6>
+            <h3>{{ (sync_interval / 3600)|int }}h</h3>
+            <small>{{ (sync_interval / 86400)|round(1) }} days</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center py-3">
+            <h6 class="text-muted mb-1">Last Scan</h6>
+            <h3 style="font-size:1rem">{% if runs %}{{ runs[0].run_date[:16] }}{% else %}Never{% endif %}</h3>
+            <small>{% if runs %}{{ runs[0].projects_found }} found{% endif %}</small>
+        </div>
+    </div>
+</div>
+
+<!-- Source Status -->
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-server"></i> Data Source Status</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Source</th><th>Last Sync</th><th>Total Found</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for src in source_stats %}
+                <tr>
+                    <td><span class="u-badge u-{{ src.source }}">{{ src.source }}</span></td>
+                    <td><small>{{ src.last_sync or 'Never' }}</small></td>
+                    <td>{{ src.total_found or 0 }}</td>
+                    <td>
+                        {% if src.total_found and src.total_found > 0 %}
+                        <span class="badge bg-success">Working</span>
+                        {% else %}
+                        <span class="badge bg-warning">No Data</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not source_stats %}
+                <tr><td colspan="4" class="text-center py-4 text-muted">
+                    No sync data yet. <a href="{{ url_for('trigger_sync') }}">Run first sync</a>
+                </td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Recent Runs -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history"></i> Recent Scans</span>
+        <a href="{{ url_for('trigger_sync') }}" class="btn btn-sm btn-primary"><i class="bi bi-play-fill"></i> Run Now</a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Date/Time</th><th>Status</th><th>Sources</th><th>Found</th><th>New</th><th>Duration</th></tr></thead>
+            <tbody>
+                {% for run in runs %}
+                <tr>
+                    <td><small>{{ run.run_date }}</small></td>
+                    <td>
+                        {% if run.status == 'success' %}<span class="badge bg-success">OK</span>
+                        {% else %}<span class="badge bg-danger">{{ run.status }}</span>{% endif %}
+                    </td>
+                    <td>{{ run.sources_checked }}</td>
+                    <td>{{ run.projects_found }}</td>
+                    <td class="fw-bold text-success">{{ run.projects_stored }}</td>
+                    <td>{{ "%.1f"|format(run.duration_seconds or 0) }}s</td>
+                </tr>
+                {% endfor %}
+                {% if not runs %}
+                <tr><td colspan="6" class="text-center py-4">No runs yet. <a href="{{ url_for('trigger_sync') }}">Run Now</a></td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+{% block title %}Projects - Power Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .filter-bar {
+        background: #fff; border-radius: 10px; padding: 16px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 20px;
+    }
+    .filter-bar input, .filter-bar select {
+        font-size: .85rem; border-color: #e2e8f0;
+    }
+    .filter-bar label { font-size: .75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+
+    #projectTable {
+        font-size: .85rem;
+    }
+    #projectTable thead th {
+        position: sticky; top: 0; background: #f8fafc;
+        cursor: pointer; user-select: none; white-space: nowrap;
+        padding: 10px 12px;
+    }
+    #projectTable thead th:hover { background: #e2e8f0; }
+    #projectTable thead th .sort-icon { margin-left: 4px; opacity: .3; font-size: .7rem; }
+    #projectTable thead th.sort-active .sort-icon { opacity: 1; color: var(--accent); }
+    #projectTable tbody tr { cursor: pointer; transition: background .1s; }
+    #projectTable tbody tr:hover { background: #f0f7ff; }
+    #projectTable td { padding: 8px 12px; vertical-align: middle; }
+
+    .type-badge {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: .72rem; font-weight: 600;
+    }
+    .type-datacenter { background: #fee2e2; color: #991b1b; }
+    .type-solar { background: #fef9c3; color: #854d0e; }
+    .type-wind { background: #dbeafe; color: #1e40af; }
+    .type-storage { background: #d1fae5; color: #065f46; }
+    .type-gas { background: #ffedd5; color: #9a3412; }
+    .type-nuclear { background: #f3e8ff; color: #6b21a8; }
+    .type-other { background: #f1f5f9; color: #475569; }
+
+    .results-meta { font-size: .82rem; color: #64748b; margin-bottom: 12px; }
+    .table-wrap { background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden; }
+    .table-scroll { max-height: 72vh; overflow-y: auto; }
+
+    .pagination-bar {
+        padding: 12px 18px; border-top: 1px solid #e2e8f0;
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: .82rem; color: #64748b; background: #fff;
+        border-radius: 0 0 10px 10px;
+    }
+    .pagination-bar button {
+        border: 1px solid #e2e8f0; background: #fff; padding: 4px 14px;
+        border-radius: 6px; font-size: .8rem; cursor: pointer; color: #334155;
+    }
+    .pagination-bar button:disabled { opacity: .4; cursor: default; }
+    .pagination-bar button:not(:disabled):hover { background: #f1f5f9; }
+
+    .loading-spinner { text-align: center; padding: 60px; color: #94a3b8; }
+    .empty-state { text-align: center; padding: 60px; color: #94a3b8; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1" style="font-weight:700"><i class="bi bi-table"></i> Projects</h2>
+        <p class="text-muted mb-0" style="font-size:.88rem">Interconnection queue entries across all US ISOs</p>
+    </div>
+    <a href="{{ url_for('export_csv') }}" class="btn btn-sm btn-outline-success">
+        <i class="bi bi-download"></i> Export CSV
+    </a>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label>Search</label>
+            <input type="text" id="searchInput" class="form-control form-control-sm"
+                   placeholder="Name, customer, county...">
+        </div>
+        <div class="col-md-2">
+            <label>State</label>
+            <select id="stateFilter" class="form-select form-select-sm">
+                <option value="">All States</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label>ISO / RTO</label>
+            <select id="utilityFilter" class="form-select form-select-sm">
+                <option value="">All ISOs</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label>Type</label>
+            <select id="typeFilter" class="form-select form-select-sm">
+                <option value="">All Types</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label>Min MW</label>
+            <input type="number" id="minMW" class="form-control form-control-sm" placeholder="0">
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+            <button id="clearBtn" class="btn btn-sm btn-outline-secondary w-100">Clear</button>
+        </div>
+    </div>
+</div>
+
+<div class="results-meta" id="resultsMeta">Loading projects...</div>
+
+<!-- Table -->
+<div class="table-wrap">
+    <div class="loading-spinner" id="loading">
+        <div class="spinner-border text-primary mb-3" role="status"></div>
+        <p>Loading project data...</p>
+    </div>
+    <div class="table-scroll" id="tableWrap" style="display:none">
+        <table class="table table-sm mb-0" id="projectTable">
+            <thead>
+                <tr>
+                    <th data-key="project_name">Project <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="customer">Customer <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="capacity_mw" data-type="num">MW <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="fuel_type">Fuel <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="project_type">Type <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="county">County <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="state">State <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="utility">ISO <span class="sort-icon bi bi-chevron-expand"></span></th>
+                    <th data-key="status">Status <span class="sort-icon bi bi-chevron-expand"></span></th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+    <div class="pagination-bar" id="paginationBar" style="display:none">
+        <span id="pageInfo"></span>
+        <div>
+            <button id="prevBtn" onclick="changePage(-1)"><i class="bi bi-chevron-left"></i> Prev</button>
+            <button id="nextBtn" onclick="changePage(1)">Next <i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+    <div class="empty-state" id="emptyState" style="display:none">
+        <i class="bi bi-search" style="font-size:2.5rem"></i>
+        <p class="mt-2">No projects match your filters</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const PAGE_SIZE = 100;
+let allData = [];
+let filtered = [];
+let sortKey = 'capacity_mw';
+let sortDir = -1; // -1 = desc
+let currentPage = 0;
+
+// Load data
+fetch('/api/projects')
+    .then(r => r.json())
+    .then(data => {
+        allData = data;
+        populateFilterOptions();
+        applyFilters();
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('tableWrap').style.display = '';
+        document.getElementById('paginationBar').style.display = '';
+    })
+    .catch(err => {
+        document.getElementById('loading').innerHTML =
+            '<p class="text-danger">Failed to load data. Try refreshing.</p>';
+    });
+
+function populateFilterOptions() {
+    const states = new Set(), utilities = new Set(), types = new Set();
+    allData.forEach(p => {
+        if (p.state) states.add(p.state);
+        if (p.utility) utilities.add(p.utility);
+        if (p.project_type) types.add(p.project_type);
+    });
+
+    const stateSelect = document.getElementById('stateFilter');
+    [...states].sort().forEach(s => {
+        const o = document.createElement('option'); o.value = s; o.textContent = s;
+        stateSelect.appendChild(o);
+    });
+    const utilSelect = document.getElementById('utilityFilter');
+    [...utilities].sort().forEach(u => {
+        const o = document.createElement('option'); o.value = u; o.textContent = u;
+        utilSelect.appendChild(o);
+    });
+    const typeSelect = document.getElementById('typeFilter');
+    [...types].sort().forEach(t => {
+        const o = document.createElement('option'); o.value = t; o.textContent = t;
+        typeSelect.appendChild(o);
+    });
+}
+
+function applyFilters() {
+    const search = document.getElementById('searchInput').value.toLowerCase().trim();
+    const state = document.getElementById('stateFilter').value;
+    const utility = document.getElementById('utilityFilter').value;
+    const type = document.getElementById('typeFilter').value;
+    const minMW = parseFloat(document.getElementById('minMW').value) || 0;
+
+    filtered = allData.filter(p => {
+        if (state && p.state !== state) return false;
+        if (utility && p.utility !== utility) return false;
+        if (type && p.project_type !== type) return false;
+        if (p.capacity_mw < minMW) return false;
+        if (search) {
+            const hay = [p.project_name, p.customer, p.county, p.state, p.utility, p.fuel_type, p.request_id]
+                .map(v => (v||'').toLowerCase()).join(' ');
+            if (!hay.includes(search)) return false;
+        }
+        return true;
+    });
+
+    sortData();
+    currentPage = 0;
+    render();
+}
+
+function sortData() {
+    filtered.sort((a, b) => {
+        let va = a[sortKey] ?? '';
+        let vb = b[sortKey] ?? '';
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+        va = String(va).toLowerCase();
+        vb = String(vb).toLowerCase();
+        if (va < vb) return -1 * sortDir;
+        if (va > vb) return 1 * sortDir;
+        return 0;
+    });
+}
+
+function render() {
+    const tbody = document.getElementById('tbody');
+    const start = currentPage * PAGE_SIZE;
+    const page = filtered.slice(start, start + PAGE_SIZE);
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+
+    document.getElementById('resultsMeta').textContent =
+        `${filtered.length.toLocaleString()} projects found`;
+
+    if (page.length === 0) {
+        tbody.innerHTML = '';
+        document.getElementById('emptyState').style.display = '';
+        document.getElementById('paginationBar').style.display = 'none';
+        return;
+    }
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('paginationBar').style.display = '';
+
+    tbody.innerHTML = page.map(p => `
+        <tr onclick="window.location='/project/${p.id}'">
+            <td style="max-width:260px">
+                <div class="text-truncate fw-semibold" style="color:#1e40af">${esc(p.project_name)}</div>
+                <small class="text-muted">${esc(p.request_id)}</small>
+            </td>
+            <td style="max-width:160px"><small class="text-truncate d-block">${esc(p.customer || '-')}</small></td>
+            <td class="fw-bold">${Math.round(p.capacity_mw).toLocaleString()}</td>
+            <td><small>${esc(p.fuel_type || '-')}</small></td>
+            <td><span class="type-badge type-${p.project_type || 'other'}">${esc(p.project_type || 'other')}</span></td>
+            <td><small>${esc(p.county || '-')}</small></td>
+            <td>${esc(p.state || '-')}</td>
+            <td><span class="u-badge u-${p.utility}">${esc(p.utility)}</span></td>
+            <td><small>${esc((p.status || 'Active').substring(0, 20))}</small></td>
+        </tr>
+    `).join('');
+
+    document.getElementById('pageInfo').textContent =
+        `Page ${currentPage + 1} of ${totalPages} · Showing ${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)}`;
+    document.getElementById('prevBtn').disabled = currentPage === 0;
+    document.getElementById('nextBtn').disabled = currentPage >= totalPages - 1;
+
+    // Update sort header styles
+    document.querySelectorAll('#projectTable thead th').forEach(th => {
+        th.classList.toggle('sort-active', th.dataset.key === sortKey);
+        const icon = th.querySelector('.sort-icon');
+        if (icon) {
+            if (th.dataset.key === sortKey) {
+                icon.className = sortDir === 1 ? 'sort-icon bi bi-chevron-up' : 'sort-icon bi bi-chevron-down';
+            } else {
+                icon.className = 'sort-icon bi bi-chevron-expand';
+            }
+        }
+    });
+}
+
+function changePage(delta) {
+    currentPage += delta;
+    render();
+    document.getElementById('tableWrap').scrollTop = 0;
+}
+
+function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// Event listeners
+document.getElementById('searchInput').addEventListener('input', debounce(applyFilters, 200));
+document.getElementById('stateFilter').addEventListener('change', applyFilters);
+document.getElementById('utilityFilter').addEventListener('change', applyFilters);
+document.getElementById('typeFilter').addEventListener('change', applyFilters);
+document.getElementById('minMW').addEventListener('input', debounce(applyFilters, 300));
+document.getElementById('clearBtn').addEventListener('click', () => {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('stateFilter').value = '';
+    document.getElementById('utilityFilter').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('minMW').value = '';
+    applyFilters();
+});
+
+// Column sort
+document.querySelectorAll('#projectTable thead th').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        if (!key) return;
+        if (sortKey === key) {
+            sortDir *= -1;
+        } else {
+            sortKey = key;
+            sortDir = th.dataset.type === 'num' ? -1 : 1;
+        }
+        sortData();
+        currentPage = 0;
+        render();
+    });
+});
+
+function debounce(fn, ms) {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+</script>
+{% endblock %}
