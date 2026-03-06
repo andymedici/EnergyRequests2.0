@@ -55,8 +55,8 @@
             <div class="card-header"><i class="bi bi-info-circle"></i> Source Info</div>
             <div class="card-body" style="font-size:.88rem">
                 <p><strong>Source:</strong><br>{{ project.source }}</p>
-                <p><strong>First Seen:</strong><br>{{ project.first_seen }}</p>
-                <p class="mb-0"><strong>Last Updated:</strong><br>{{ project.last_updated }}</p>
+                <p><strong>First Seen:</strong><br>{{ project.first_seen|fmtdate }}</p>
+                <p class="mb-0"><strong>Last Updated:</strong><br>{{ project.last_updated|fmtdate }}</p>
             </div>
         </div>
     </div>
