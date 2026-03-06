@@ -58,6 +58,16 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 
+# Jinja filter: safely format timestamps whether they're datetime objects or strings
+@app.template_filter('fmtdate')
+def fmtdate_filter(value, fmt='%Y-%m-%d %H:%M'):
+    """Format a datetime or string timestamp for display."""
+    if value is None:
+        return 'Never'
+    if isinstance(value, datetime):
+        return value.strftime(fmt)
+    return str(value)[:16]  # fallback for strings
+
 DATA_DIR = os.environ.get('DATA_DIR', '/app/data')
 
 # How often to run automatic syncs (in seconds). Default: weekly (604800s)
