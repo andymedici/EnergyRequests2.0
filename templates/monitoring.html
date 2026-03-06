@@ -29,7 +29,7 @@
     <div class="col-md-3">
         <div class="card text-center py-3">
             <h6 class="text-muted mb-1">Last Scan</h6>
-            <h3 style="font-size:1rem">{% if runs %}{{ runs[0].run_date[:16] }}{% else %}Never{% endif %}</h3>
+            <h3 style="font-size:1rem">{% if runs %}{{ runs[0].run_date|fmtdate }}{% else %}Never{% endif %}</h3>
             <small>{% if runs %}{{ runs[0].projects_found }} found{% endif %}</small>
         </div>
     </div>
@@ -45,7 +45,7 @@
                 {% for src in source_stats %}
                 <tr>
                     <td><span class="u-badge u-{{ src.source }}">{{ src.source }}</span></td>
-                    <td><small>{{ src.last_sync or 'Never' }}</small></td>
+                    <td><small>{{ src.last_sync|fmtdate }}</small></td>
                     <td>{{ src.total_found or 0 }}</td>
                     <td>
                         {% if src.total_found and src.total_found > 0 %}
@@ -78,7 +78,7 @@
             <tbody>
                 {% for run in runs %}
                 <tr>
-                    <td><small>{{ run.run_date }}</small></td>
+                    <td><small>{{ run.run_date|fmtdate }}</small></td>
                     <td>
                         {% if run.status == 'success' %}<span class="badge bg-success">OK</span>
                         {% else %}<span class="badge bg-danger">{{ run.status }}</span>{% endif %}
