@@ -126,7 +126,7 @@
                     </div>
                     <div class="col-md-4">
                         <strong>Last Sync:</strong>
-                        {% if last_run %}{{ last_run.run_date }} ({{ last_run.projects_found }} found){% else %}Never{% endif %}
+                        {% if last_run %}{{ last_run.run_date|fmtdate }} ({{ last_run.projects_found }} found){% else %}Never{% endif %}
                     </div>
                     <div class="col-md-4">
                         <strong>Version:</strong> {{ version }}
